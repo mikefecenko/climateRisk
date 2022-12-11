@@ -35,29 +35,26 @@ def split_years(dt):
     dt['year'] = dt['date'].dt.year
     return [dt[dt['year'] == y] for y in dt['year'].unique()]
 
-split_years(dfstock)
-dfstock.to_csv('df.csv')
-print(years)
-# for year in years:
 e_vol_1y = []
-# e_vol_1y2 = []
 
 ## For merton formulation we need standard deviation of log returns
 for i in range(len(years)):
     mask = (dfstock['date'] > str(years[i])) & (dfstock['date'] <= str(years[i]+1))
     dfstock1year = dfstock.loc[mask].copy()
     
-    ## This is two ways of calculating the log returns
+    ## Getting equity volatility from yearly standard deviation of log returns.
     dfstock1year['pctChange'] = dfstock.price.pct_change()    
     equity_vol = dfstock1year["pctChange"].std()
     e_vol_1y.append(equity_vol * np.sqrt(dfstock1year.size))
-#     dfstock1year['logReturns'] = np.log(dfstock1year.price) - np.log(dfstock1year.price.shift(1))
-#     e_vol_1y2.append(equity_vol2 * np.sqrt(252))
-#     equity_vol2 = dfstock1year["logReturns"].std()
 
-## This scaled for one year but takes in all the data. we need to get the vol for each ey
-print(e_vol_1y)
-# print(e_vol_1y2)
+
+
+plt.plot(yearsReversed, e_vol_1y[::-1])
+plt.ylabel('Equity Volatility')
+plt.title('Yearly Equity Volatility 2012-2021')
+plt.xlabel('Year')
+plt.tight_layout()
+plt.show()
 
 
 a_vol_1y = []
@@ -79,7 +76,7 @@ for i in range(len(years)):
     last_price = dfstock1year["price"].iloc[-1]
     last_outst = dfcompany["Shares Outstanding (Millions)"].iloc[i]
     E = last_outst*1000000 * last_price
-    D = 0.5**1000000* dfcompany["Long Term Debt (Millions)"].iloc[i] + 1000000* dfcompany["Short Term Debt (Millions)"].iloc[i]
+    D = 0.5*1000000* dfcompany["Long Term Debt (Millions)"].iloc[i] + 1000000* dfcompany["Short Term Debt (Millions)"].iloc[i]
     asset = (E + D)
     zGuess = np.array([asset,e_vol_1y[i]])
     z = fsolve(myFunction,zGuess)
@@ -90,39 +87,51 @@ for i in range(len(years)):
     a_vol_1y.append(z[1])
     Eq.append(E)
     Debt.append(D)
-# zGuess = np.array([asset,e_vol_1y])
-# z = fsolve(myFunction,zGuess)
-# print(As)
-# print(a_vol_1y)
 
+plt.plot(yearsReversed, a_vol_1y[::-1])
+plt.ylabel('Asset Volatility')
+plt.title('Yearly Asset Volatility 2012-2021')
+plt.xlabel('Year')
+plt.tight_layout()
+plt.show()
+
+AsBil = []
+for i in As:
+    AsBil.append(i/1000000000)
+
+plt.plot(yearsReversed, AsBil[::-1])
+plt.ylabel('Assets (Billion $)')
+plt.title('Yearly Assets 2012-2021')
+plt.xlabel('Year')
+plt.tight_layout()
+plt.show()
+
+
+## Adding features to new Dataframe with the newly calculated calues for each year. This makes calculated the relative probability of defaults for each year easy.
 dfcompany['assets'] = As
 dfcompany['assetVol'] = a_vol_1y
 dfcompany['equities'] = Eq
 dfcompany['equityVol'] = e_vol_1y
 dfcompany['debt'] = Debt
-
 ## Calculating probability of default
 dfcompany['probDefault'] = norm.cdf(-dminus(dfcompany['assets'], dfcompany['assetVol'],dfcompany['debt'], T))
 probDefault = dfcompany['probDefault']
-# print(probDefault)
+dfcompany['probDefault (%)'] = probDefault * 100
+probDefaultP = []
+for i in probDefault:
+    probDefaultP.insert(0, i * 100)
+
+
 dfcompany.to_csv('newDf.csv')
 
-
-probDefaultP = []
-added = 0
-for i in probDefault:
-    added += i
-    probDefaultP.insert(0, i * 100)
-print('hi' + str(probDefaultP))
-avg = added/len(probDefault)
 
 plt.plot(yearsReversed, probDefaultP)
 plt.yscale("log")
 plt.ylabel('Probability of Default (%)')
+plt.title('Yearly Historical Probability of Default (%) 2012-2021')
 plt.xlabel('Year')
 plt.tight_layout()
 plt.show()
-
 
 
 
@@ -132,7 +141,6 @@ scope3reset = 650000000
 
 
 scenarioYears = ['2025', '2030', '2035', '2040', '2045', '2050']
-# scenarioYearsplot = ['2021', '2025', '2030', '2035', '2040', '2045', '2050']
 scenarioYearsplotfull = yearsReversed + scenarioYears
 
 # carbonPrice = 517.1212734
@@ -148,26 +156,20 @@ tempScenarioScope3 = []
 scenariosScope1 = []
 scenariosScope3 = []
 carbonPrices = dfclimate['price']
+print(carbonPrices[10])
 # scenarios = dfclimate['scenario']
 for i in range(3):
     scope1 = scope1reset
     scope3 = scope3reset
     for j in range(6):
         carbonPrice = carbonPrices[i*6 + j]
-        for k in range(len(As)):
-            tempScenarioScope1.append(scenarioProbDefault(np.maximum(As[0] - epsilon(scope1, carbonPrice), 0), a_vol_1y[0] , Debt[0], T, carbonPrice))
-            tempScenarioScope3.append(scenarioProbDefault(np.maximum(As[0] - epsilon(scope3, carbonPrice), 0), a_vol_1y[0], Debt[0], T, carbonPrice))
-            print(As[0])
-            print(Debt[0])
-        # print(scope1reset)
-        # scenariosScope1.append(scenarioProbDefault(np.maximum(As[0] - epsilon(scope1, carbonPrice), 0), a_vol_1y[0], Debt[0], T, carbonPrice))
-        scenariosScope1.append(np.mean(tempScenarioScope1))
-        scenariosScope3.append(np.mean(tempScenarioScope3))
-        tempScenarioScope1 = []
-        tempScenarioScope3 = []
+        scenariosScope1.append(scenarioProbDefault(np.maximum(As[0] - epsilon(scope1, carbonPrice), 0), a_vol_1y[0] , Debt[0], T, carbonPrice))
+        scenariosScope3.append(scenarioProbDefault(np.maximum(As[0] - epsilon(scope3 + scope1, carbonPrice), 0), a_vol_1y[0], Debt[0], T, carbonPrice))
+        # scenariosScope1.append(np.mean(tempScenarioScope1))
+        # scenariosScope3.append(np.mean(tempScenarioScope3))
+        # tempScenarioScope1 = []
+        # tempScenarioScope3 = []
         # scope1 = scope1 - scope1reset/5
-        # scope3 = scope3 - scope3reset/5
-        print(scope1)
 
 scenariospercentScope1 = []
 for i in scenariosScope1:
@@ -208,15 +210,11 @@ plt.plot('dates', 'PD - NCR', data=dfresultsscope1[dfresultsscope1['dates'] < 20
 plt.plot('dates', 'PD - NCR', data=dfresultsscope1[dfresultsscope1['dates'] > 2020], color='green', linewidth=2, linestyle = '--')
 plt.plot('dates', 'PD - Delayed', data=dfresultsscope1[dfresultsscope1['dates'] > 2020], color='orange', linewidth=2, linestyle = '--')
 plt.plot('dates', 'PD - Net Zero', data=dfresultsscope1[dfresultsscope1['dates'] > 2020], color='red', linewidth=2, linestyle = '--')
-# plt.plot(scenarioYearsplotfull, scenarioNCRfullScope1, label = 'NDC' )
-# plt.plot(scenarioYearsplotfull, scenarioDelayedfullScope1, label = 'Delayed')
-# plt.plot(scenarioYearsplotfull, scenarioNetZerofullScope1, label = 'NetZero')
 plt.yscale("log")
 plt.title('Probability of Default (%) Forecasts with Scope 1 & 2')
-
+# plt.title('Probability of Default (%) Forecasts with Scope 1 & 2 \n Assuming Linear Emissions')
 plt.ylabel('Probability of Default (%)')
 plt.xlabel('Year')
-# plt.xticks(xi, x)
 plt.legend()
 plt.tight_layout()
 plt.show()
@@ -226,36 +224,11 @@ plt.plot('dates', 'PD - NCR', data=dfresultsscope3[dfresultsscope3['dates'] < 20
 plt.plot('dates', 'PD - NCR', data=dfresultsscope3[dfresultsscope3['dates'] > 2020], color='green', linewidth=2, linestyle = '--')
 plt.plot('dates', 'PD - Delayed', data=dfresultsscope3[dfresultsscope3['dates'] > 2020], color='orange', linewidth=2, linestyle = '--')
 plt.plot('dates', 'PD - Net Zero', data=dfresultsscope3[dfresultsscope3['dates'] > 2020], color='red', linewidth=2, linestyle = '--')
-# plt.plot(scenarioYearsplotfull, scenarioNCRfullScope1, label = 'NDC' )
-# plt.plot(scenarioYearsplotfull, scenarioDelayedfullScope1, label = 'Delayed')
-# plt.plot(scenarioYearsplotfull, scenarioNetZerofullScope1, label = 'NetZero')
 plt.yscale("log")
 plt.title('Probability of Default (%) Forecasts with Scope 1, 2 & 3')
+# plt.title('Probability of Default (%) Forecasts with Scope 1, 2 & 3 \n Assuming Linear Emissions')
 plt.ylabel('Probability of Default (%)')
 plt.xlabel('Year')
-# plt.xticks(xi, x)
 plt.legend()
 plt.tight_layout()
 plt.show()
-
-
-
-
-
-
-
-# plt.plot(scenarioYearsplotfull, scenarioNCRfullScope3, label = 'NDC' )
-# plt.plot(scenarioYearsplotfull, scenarioDelayedfullScope3, label = 'Delayed')
-# plt.plot(scenarioYearsplotfull, scenarioNetZerofullScope3, label = 'NetZero')
-# plt.yscale("log")
-# plt.ylabel('Probability of Default (%)')
-# plt.xlabel('Year')
-# # plt.xticks(xi, x)
-# plt.legend()
-
-# plt.tight_layout()
-# plt.show()
-
-
-# print(a_vol_1y)
-# print(mean(a_vol_1y))
